@@ -27,40 +27,43 @@ public abstract class GameRendererReloadShaders {
     @Final
     private Map<String, ShaderInstance> shaders;
 
-    @Inject(
-            method = "reloadShaders", at = @At("RETURN")
-    )
+    @Inject(method = "reloadShaders", at = @At("RETURN"))
     private void onLoadShaders(ResourceProvider resourceProvider, CallbackInfo ci) {
-
         PlayerStatusManagerClient.particle = null;
         PlayerStatusManagerClient.positionTexBlur = null;
         PlayerStatusManagerClient.positionTexBlurHorizontal = null;
         PlayerStatusManagerClient.positionTexBlurVertical = null;
 
-        try {
-            PlayerStatusManagerClient.particle = new ShaderInstanceBlur(getResourceFactory(resourceProvider), "particle",
-                    DefaultVertexFormat.PARTICLE);
-            PlayerStatusManagerClient.positionTexBlur = new ShaderInstanceBlur(getResourceFactory(resourceProvider), "position_tex_blur",
-                    DefaultVertexFormat.POSITION_TEX);
-            PlayerStatusManagerClient.positionTexBlurHorizontal = new ShaderInstanceBlur(getResourceFactory(resourceProvider), "position_tex_blur_horizontal",
-                    DefaultVertexFormat.POSITION_TEX);
-            PlayerStatusManagerClient.positionTexBlurVertical = new ShaderInstanceBlur(getResourceFactory(resourceProvider), "position_tex_blur_vertical",
-                    DefaultVertexFormat.POSITION_TEX);
-
-            shaders.put(PlayerStatusManagerClient.particle.getName(), PlayerStatusManagerClient.particle);
-            shaders.put(PlayerStatusManagerClient.positionTexBlur.getName(), PlayerStatusManagerClient.positionTexBlur);
-            shaders.put(PlayerStatusManagerClient.positionTexBlurHorizontal.getName(), PlayerStatusManagerClient.positionTexBlurHorizontal);
-            shaders.put(PlayerStatusManagerClient.positionTexBlurVertical.getName(), PlayerStatusManagerClient.positionTexBlurVertical);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-
+        loadShaderSafe("particle", DefaultVertexFormat.PARTICLE, resourceProvider,
+                shader -> PlayerStatusManagerClient.particle = shader, "粒子");
+        loadShaderSafe("position_tex_blur", DefaultVertexFormat.POSITION_TEX, resourceProvider,
+                shader -> PlayerStatusManagerClient.positionTexBlur = shader, "模糊");
+        loadShaderSafe("position_tex_blur_horizontal", DefaultVertexFormat.POSITION_TEX, resourceProvider,
+                shader -> PlayerStatusManagerClient.positionTexBlurHorizontal = shader, "水平模糊");
+        loadShaderSafe("position_tex_blur_vertical", DefaultVertexFormat.POSITION_TEX, resourceProvider,
+                shader -> PlayerStatusManagerClient.positionTexBlurVertical = shader, "垂直模糊");
     }
 
-    // vanilla hardcodes the shader namespace to be "minecraft"
+    /**
+     * 安全加载 shader，如果缺失不崩溃，只警告
+     */
+    private void loadShaderSafe(String name, DefaultVertexFormat format, ResourceProvider resourceProvider,
+                               java.util.function.Consumer<ShaderInstanceBlur> setter, String desc) {
+        try {
+            ShaderInstanceBlur shader = new ShaderInstanceBlur(getResourceFactory(resourceProvider), name, format);
+            if (shader != null) {
+                setter.accept(shader);
+                shaders.put(shader.getName(), shader);
+            }
+        } catch (IOException e) {
+            System.err.println("[Watut] 警告：" + desc + " shader (" + name + ") 缺失，已跳过，不影响游戏启动。");
+        } catch (Throwable t) {
+            System.err.println("[Watut] 警告：" + desc + " shader (" + name + ") 加载异常：" + t);
+        }
+    }
+
     private static ResourceProvider getResourceFactory(ResourceProvider resourceManager) {
-        ResourceProvider resourceFactory = new ResourceProvider() {
+        return new ResourceProvider() {
             @Override
             public Optional<Resource> getResource(ResourceLocation resourceLocation) {
                 ResourceLocation corrected = ResourceLocation.fromNamespaceAndPath(
@@ -68,6 +71,5 @@ public abstract class GameRendererReloadShaders {
                 return resourceManager.getResource(corrected);
             }
         };
-        return resourceFactory;
     }
 }
